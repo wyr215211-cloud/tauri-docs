@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - tmp/crisis-cesium-three-build-20260727
+  pull_request:
+    branches:
+      - v2
 
 permissions:
   contents: read
