@@ -1,0 +1,55 @@
+name: tmp-crisis-deps
+
+on:
+  push:
+    branches:
+      - tmp/crisis-cesium-three-build-20260727
+
+permissions:
+  contents: read
+
+env:
+  CESIUM_VERSION: "1.142.0"
+  THREE_VERSION: "0.180.0"
+
+jobs:
+  package-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Prepare runtime packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/vendor/cesium runtime/vendor/three
+
+          npm pack "three@${THREE_VERSION}" --silent
+          THREE_TGZ="$(ls three-*.tgz)"
+          mkdir three-package
+          tar -xzf "$THREE_TGZ" -C three-package
+          cp three-package/package/build/three.module.min.js runtime/vendor/three/
+          cp three-package/package/build/three.core.min.js runtime/vendor/three/
+          cp three-package/package/LICENSE runtime/vendor/three/
+          cp three-package/package/package.json runtime/vendor/three/
+
+          npm pack "cesium@${CESIUM_VERSION}" --silent
+          CESIUM_TGZ="$(ls cesium-*.tgz)"
+          mkdir cesium-package
+          tar -xzf "$CESIUM_TGZ" -C cesium-package
+          cp -R cesium-package/package/Build/Cesium/. runtime/vendor/cesium/
+          cp cesium-package/package/LICENSE.md runtime/vendor/cesium/
+          cp cesium-package/package/package.json runtime/vendor/cesium/
+
+          cat > runtime/VERSIONS.txt <<EOF
+          CesiumJS ${CESIUM_VERSION}
+          Three.js ${THREE_VERSION}
+          EOF
+          find runtime -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+
+      - name: Upload runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: crisis-cesium-three-runtime
+          path: runtime
+          if-no-files-found: error
+          retention-days: 1
