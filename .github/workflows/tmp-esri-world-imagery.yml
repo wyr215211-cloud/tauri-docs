@@ -1,0 +1,64 @@
+name: tmp-esri-world-imagery
+
+on:
+  push:
+    branches:
+      - tmp/esri-world-imagery-20260728
+  pull_request:
+    branches:
+      - v2
+
+permissions:
+  contents: read
+
+jobs:
+  package-world-imagery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Download public World Imagery tiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p esri-world-imagery/tiles
+          export BASE='https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile'
+          python3 - <<'PY'
+          from pathlib import Path
+          jobs=[]
+          for z in range(0, 5):
+              n=2**z
+              for y in range(n):
+                  for x in range(n):
+                      p=Path('esri-world-imagery/tiles')/str(z)/str(y)
+                      p.mkdir(parents=True,exist_ok=True)
+                      jobs.append(f"{z} {y} {x}")
+          Path('tile-jobs.txt').write_text('\n'.join(jobs)+'\n')
+          print('tiles',len(jobs))
+          PY
+          cat tile-jobs.txt | xargs -n3 -P16 bash -c '
+            z="$1"; y="$2"; x="$3";
+            out="esri-world-imagery/tiles/$z/$y/$x.jpg";
+            curl --fail --silent --show-error --location --retry 5 --retry-delay 2 \
+              --output "$out" "$BASE/$z/$y/$x"
+          ' _
+          cat > esri-world-imagery/metadata.json <<'EOF'
+          {
+            "provider": "Esri World Imagery",
+            "service": "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer",
+            "tilePattern": "tiles/{z}/{y}/{x}.jpg",
+            "minimumLevel": 0,
+            "maximumLevel": 4,
+            "tilingScheme": "WebMercator"
+          }
+          EOF
+          find esri-world-imagery -type f -print0 | sort -z | xargs -0 sha256sum > esri-world-imagery/SHA256SUMS.txt
+          find esri-world-imagery/tiles -type f | wc -l
+          du -sh esri-world-imagery
+
+      - name: Upload imagery artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: crisis-esri-world-imagery
+          path: esri-world-imagery
+          if-no-files-found: error
+          retention-days: 1
